@@ -50,6 +50,14 @@ func (sc *snowflakeConn) getArrayBindStageThreshold() int {
 	return num
 }
 
+func (sc *snowflakeConn) getClientRequestMfaToken() bool {
+	v, ok := sc.cfg.Params[clientRequestMfaToken]
+	if !ok {
+		return false
+	}
+	return strings.Compare(*v, "true") == 0
+}
+
 func (sc *snowflakeConn) connectionTelemetry(cfg *Config) {
 	data := &telemetryData{
 		Message: map[string]string{

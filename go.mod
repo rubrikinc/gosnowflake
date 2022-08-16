@@ -10,6 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.7.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.19.0
 	github.com/aws/smithy-go v1.9.0
+	github.com/danieljoos/wincred v1.1.2
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
