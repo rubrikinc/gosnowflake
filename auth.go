@@ -220,6 +220,8 @@ type authResponseMain struct {
 	Validity            time.Duration           `json:"validityInSeconds,omitempty"`
 	MasterToken         string                  `json:"masterToken,omitempty"`
 	MasterValidity      time.Duration           `json:"masterValidityInSeconds"`
+	MfaToken            string                  `json:"mfaToken,omitempty"`
+	MfaTokenValidity    time.Duration           `json:"mfaTokenValidityInSeconds"`
 	DisplayUserName     string                  `json:"displayUserName"`
 	ServerVersion       string                  `json:"serverVersion"`
 	FirstLogin          bool                    `json:"firstLogin"`
@@ -233,7 +235,6 @@ type authResponseMain struct {
 	TokenURL            string                  `json:"tokenUrl,omitempty"`
 	SSOURL              string                  `json:"ssoUrl,omitempty"`
 	ProofKey            string                  `json:"proofKey,omitempty"`
-	MfaToken            string                  `json:"mfaToken"`
 }
 
 type authResponse struct {
@@ -328,6 +329,7 @@ func authenticate(
 		OCSPMode:    sc.cfg.ocspMode(),
 	}
 
+
 	sessionParameters := make(map[string]interface{})
 	for k, v := range sc.cfg.Params {
 		// upper casing to normalize keys
@@ -335,6 +337,10 @@ func authenticate(
 	}
 
 	sessionParameters[sessionClientValidateDefaultParameters] = sc.cfg.ValidateDefaultParameters != ConfigBoolFalse
+
+    if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+        sessionParameters[clientRequestMfaToken] = true
+    }
 
 	requestMain := authRequestData{
 		ClientAppID:       clientType,
@@ -377,16 +383,11 @@ func authenticate(
 		}
     case AuthTypeUsernamePasswordMFA:
         logger.Info("Username and password MFA")
-            if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-            v := "true"
-                sc.cfg.Params[clientRequestMfaToken] = &v
-            }
             requestMain.LoginName = sc.cfg.User
             requestMain.Password = sc.cfg.Password
             mfaToken := prepareTemporaryCredentials(sc)
             if mfaToken != "" {
                 requestMain.Token = mfaToken
-                logger.Debugf("mfatoken: %v", mfaToken)
             }
 	case AuthTypeTokenAccessor:
 		logger.Info("Bypass authentication using existing token from token accessor")
@@ -437,7 +438,7 @@ func authenticate(
 	if !respd.Success {
 		logger.Errorln("Authentication FAILED")
 		sc.rest.TokenAccessor.SetTokens("", "", -1)
-        if sc.getClientRequestMfaToken() == true {
+        if sessionParameters[clientRequestMfaToken] == true {
             deleteCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
         }
 		code, err := strconv.Atoi(respd.Code)
@@ -452,11 +453,9 @@ func authenticate(
 		}).exceptionTelemetry(sc)
 	}
 	logger.Info("Authentication SUCCESS")
+	logger.Debugf("SESSION PARAMS: %v", sessionParameters)
 	sc.rest.TokenAccessor.SetTokens(respd.Data.Token, respd.Data.MasterToken, respd.Data.SessionID)
-	logger.Debugf("token url: %v", respd.Data.TokenURL)
-	logger.Debugf("SSO url: %v", respd.Data.SSOURL)
-	if sc.getClientRequestMfaToken() == true {
-	    logger.Debugf("token: %v", respd.Data.MfaToken)
+	if sessionParameters[clientRequestMfaToken] == true {
 	    setCredential(sc.cfg.Host, sc.cfg.User, mfaToken, respd.Data.MfaToken)
     }
 	return &respd.Data, nil
@@ -542,8 +541,6 @@ func authenticateWithConfig(sc *snowflakeConn) error {
 
 func prepareTemporaryCredentials(sc *snowflakeConn) string {
     var token = ""
-    if sc.getClientRequestMfaToken() == true {
-        token = getCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
-    }
+    token = getCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
     return token
 }
