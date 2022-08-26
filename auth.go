@@ -453,7 +453,6 @@ func authenticate(
 		}).exceptionTelemetry(sc)
 	}
 	logger.Info("Authentication SUCCESS")
-	logger.Debugf("SESSION PARAMS: %v", sessionParameters)
 	sc.rest.TokenAccessor.SetTokens(respd.Data.Token, respd.Data.MasterToken, respd.Data.SessionID)
 	if sessionParameters[clientRequestMfaToken] == true {
 	    setCredential(sc.cfg.Host, sc.cfg.User, mfaToken, respd.Data.MfaToken)
