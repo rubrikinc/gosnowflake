@@ -69,7 +69,7 @@ func setCredential(host, user, credType, token string) {
 			createCredentialCacheDir()
 			writeTemporaryCredential(host, user, credType, token)
 		} else {
-			logger.debug("OS not supported for Local Secure Storage")
+			logger.Debug("OS not supported for Local Secure Storage")
 		}
 	}
 }
@@ -89,7 +89,7 @@ func getCredential(host, user, credType string) string {
 		createCredentialCacheDir()
 		cred = readTemporaryCredential(host, user, credType)
 	} else {
-		logger.debug("OS not supported for Local Secure Storage")
+		logger.Debug("OS not supported for Local Secure Storage")
 	}
 	return cred
 }
