@@ -36,7 +36,7 @@ func getDSN() (string, *sf.Config, error) {
 	}
 	cfg := &sf.Config{
 		Account:       account,
-		Authenticator:  sf.AuthTypeUsernamePasswordMFA,
+		Authenticator: sf.AuthTypeUsernamePasswordMFA,
 		User:          user,
 		Host:          host,
 		Password:      password,

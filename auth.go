@@ -12,8 +12,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-    "os"
-    "path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -27,16 +25,10 @@ const (
 )
 
 const (
-    idToken = "ID_TOKEN"
-    mfaToken = "MFATOKEN"
-    clientStoreTemporaryCredential = "CLIENT_STORE_TEMPORARY_CREDENTIAL"
-    clientRequestMfaToken = "CLIENT_REQUEST_MFA_TOKEN"
-    credCacheDirEnv = "SF_TEMPORARY_CREDENTIAL_CACHE_DIR"
-    credCacheFileName = "temporary_credential.json"
-)
-
-var (
-   credCacheDir = ""
+	idToken                        = "ID_TOKEN"
+	mfaToken                       = "MFATOKEN"
+	clientStoreTemporaryCredential = "CLIENT_STORE_TEMPORARY_CREDENTIAL"
+	clientRequestMfaToken          = "CLIENT_REQUEST_MFA_TOKEN"
 )
 
 // AuthType indicates the type of authentication in Snowflake
@@ -59,36 +51,6 @@ const (
 	AuthTypeUsernamePasswordMFA
 )
 
-func createCredentialCacheDir() {
-    credCacheDir = os.Getenv(credCacheDirEnv)
-	if credCacheDir == "" {
-		switch runtime.GOOS {
-		case "windows":
-			credCacheDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local", "Snowflake", "Caches")
-		case "darwin":
-			home := os.Getenv("HOME")
-			if home == "" {
-				logger.Info("HOME is blank.")
-			}
-			credCacheDir = filepath.Join(home, "Library", "Caches", "Snowflake")
-		default:
-			home := os.Getenv("HOME")
-			if home == "" {
-				logger.Info("HOME is blank")
-			}
-			credCacheDir = filepath.Join(home, ".cache", "snowflake")
-		}
-	}
-
-    if _, err := os.Stat(credCacheDir); os.IsNotExist(err) {
-        if err = os.MkdirAll(credCacheDir, os.ModePerm); err != nil {
-            logger.Debugf("failed to create cache directory. %v, err: %v. ignored\n", credCacheDir, err)
-        }
-    }
-    cacheFileName = filepath.Join(credCacheDir, credCacheFileName)
-    logger.Infof("cache directory: %v", cacheFileName)
-}
-
 func determineAuthenticatorType(cfg *Config, value string) error {
 	upperCaseValue := strings.ToUpper(value)
 	lowerCaseValue := strings.ToLower(value)
@@ -105,8 +67,8 @@ func determineAuthenticatorType(cfg *Config, value string) error {
 		cfg.Authenticator = AuthTypeExternalBrowser
 		return nil
 	} else if upperCaseValue == AuthTypeUsernamePasswordMFA.String() {
-	    cfg.Authenticator = AuthTypeUsernamePasswordMFA
-	    return nil
+		cfg.Authenticator = AuthTypeUsernamePasswordMFA
+		return nil
 	} else {
 		// possibly Okta case
 		oktaURLString, err := url.QueryUnescape(lowerCaseValue)
@@ -154,8 +116,8 @@ func (authType AuthType) String() string {
 		return "SNOWFLAKE_JWT"
 	case AuthTypeTokenAccessor:
 		return "TOKENACCESSOR"
-    case AuthTypeUsernamePasswordMFA:
-        return "USERNAME_PASSWORD_MFA"
+	case AuthTypeUsernamePasswordMFA:
+		return "USERNAME_PASSWORD_MFA"
 	default:
 		return "UNKNOWN"
 	}
@@ -329,7 +291,6 @@ func authenticate(
 		OCSPMode:    sc.cfg.ocspMode(),
 	}
 
-
 	sessionParameters := make(map[string]interface{})
 	for k, v := range sc.cfg.Params {
 		// upper casing to normalize keys
@@ -338,9 +299,9 @@ func authenticate(
 
 	sessionParameters[sessionClientValidateDefaultParameters] = sc.cfg.ValidateDefaultParameters != ConfigBoolFalse
 
-    if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-        sessionParameters[clientRequestMfaToken] = true
-    }
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		sessionParameters[clientRequestMfaToken] = true
+	}
 
 	requestMain := authRequestData{
 		ClientAppID:       clientType,
@@ -381,14 +342,14 @@ func authenticate(
 			requestMain.Passcode = sc.cfg.Passcode
 			requestMain.ExtAuthnDuoMethod = "passcode"
 		}
-    case AuthTypeUsernamePasswordMFA:
-        logger.Info("Username and password MFA")
-            requestMain.LoginName = sc.cfg.User
-            requestMain.Password = sc.cfg.Password
-            mfaToken := prepareTemporaryCredentials(sc)
-            if mfaToken != "" {
-                requestMain.Token = mfaToken
-            }
+	case AuthTypeUsernamePasswordMFA:
+		logger.Info("Username and password MFA")
+		requestMain.LoginName = sc.cfg.User
+		requestMain.Password = sc.cfg.Password
+		mfaToken := prepareTemporaryCredentials(sc)
+		if mfaToken != "" {
+			requestMain.Token = mfaToken
+		}
 	case AuthTypeTokenAccessor:
 		logger.Info("Bypass authentication using existing token from token accessor")
 		sessionInfo := authResponseSessionInfo{
@@ -438,9 +399,9 @@ func authenticate(
 	if !respd.Success {
 		logger.Errorln("Authentication FAILED")
 		sc.rest.TokenAccessor.SetTokens("", "", -1)
-        if sessionParameters[clientRequestMfaToken] == true {
-            deleteCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
-        }
+		if sessionParameters[clientRequestMfaToken] == true {
+			deleteCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
+		}
 		code, err := strconv.Atoi(respd.Code)
 		if err != nil {
 			code = -1
@@ -455,8 +416,8 @@ func authenticate(
 	logger.Info("Authentication SUCCESS")
 	sc.rest.TokenAccessor.SetTokens(respd.Data.Token, respd.Data.MasterToken, respd.Data.SessionID)
 	if sessionParameters[clientRequestMfaToken] == true {
-	    setCredential(sc.cfg.Host, sc.cfg.User, mfaToken, respd.Data.MfaToken)
-    }
+		setCredential(sc.cfg.Host, sc.cfg.User, mfaToken, respd.Data.MfaToken)
+	}
 	return &respd.Data, nil
 }
 
@@ -539,7 +500,7 @@ func authenticateWithConfig(sc *snowflakeConn) error {
 }
 
 func prepareTemporaryCredentials(sc *snowflakeConn) string {
-    var token = ""
-    token = getCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
-    return token
+	var token = ""
+	token = getCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
+	return token
 }
