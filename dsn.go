@@ -80,6 +80,9 @@ type Config struct {
 	Transporter http.RoundTripper // RoundTripper to intercept HTTP requests and responses
 
 	DisableTelemetry bool // indicates whether to disable telemetry
+
+	MfaToken string // Internally used to cache the MFA token
+	IdToken  string // Internally used to cache the Id Token for external browser
 }
 
 // ocspMode returns the OCSP mode in string INSECURE, FAIL_OPEN, FAIL_CLOSED

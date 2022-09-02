@@ -29,6 +29,7 @@ const (
 	mfaToken                       = "MFATOKEN"
 	clientStoreTemporaryCredential = "CLIENT_STORE_TEMPORARY_CREDENTIAL"
 	clientRequestMfaToken          = "CLIENT_REQUEST_MFA_TOKEN"
+	idTokenAuthenticator           = "ID_TOKEN"
 )
 
 // AuthType indicates the type of authentication in Snowflake
@@ -184,6 +185,8 @@ type authResponseMain struct {
 	MasterValidity      time.Duration           `json:"masterValidityInSeconds"`
 	MfaToken            string                  `json:"mfaToken,omitempty"`
 	MfaTokenValidity    time.Duration           `json:"mfaTokenValidityInSeconds"`
+	IdToken             string                  `json:"idtoken,omitempty"`
+	IdTokenValidity     time.Duration           `json:"idTokenValidityInSeconds"`
 	DisplayUserName     string                  `json:"displayUserName"`
 	ServerVersion       string                  `json:"serverVersion"`
 	FirstLogin          bool                    `json:"firstLogin"`
@@ -298,11 +301,6 @@ func authenticate(
 	}
 
 	sessionParameters[sessionClientValidateDefaultParameters] = sc.cfg.ValidateDefaultParameters != ConfigBoolFalse
-
-	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
-		sessionParameters[clientRequestMfaToken] = true
-	}
-
 	requestMain := authRequestData{
 		ClientAppID:       clientType,
 		ClientAppVersion:  SnowflakeGoDriverVersion,
@@ -313,10 +311,15 @@ func authenticate(
 
 	switch sc.cfg.Authenticator {
 	case AuthTypeExternalBrowser:
-		requestMain.ProofKey = string(proofKey)
-		requestMain.Token = string(samlResponse)
-		requestMain.LoginName = sc.cfg.User
-		requestMain.Authenticator = AuthTypeExternalBrowser.String()
+		if sc.cfg.IdToken != "" {
+			requestMain.Authenticator = idTokenAuthenticator
+			requestMain.Token = sc.cfg.IdToken
+		} else {
+			requestMain.ProofKey = string(proofKey)
+			requestMain.Token = string(samlResponse)
+			requestMain.LoginName = sc.cfg.User
+			requestMain.Authenticator = AuthTypeExternalBrowser.String()
+		}
 	case AuthTypeOAuth:
 		requestMain.LoginName = sc.cfg.User
 		requestMain.Authenticator = AuthTypeOAuth.String()
@@ -346,9 +349,8 @@ func authenticate(
 		logger.Info("Username and password MFA")
 		requestMain.LoginName = sc.cfg.User
 		requestMain.Password = sc.cfg.Password
-		mfaToken := prepareTemporaryCredentials(sc)
-		if mfaToken != "" {
-			requestMain.Token = mfaToken
+		if sc.cfg.MfaToken != "" {
+			requestMain.Token = sc.cfg.MfaToken
 		}
 	case AuthTypeTokenAccessor:
 		logger.Info("Bypass authentication using existing token from token accessor")
@@ -399,8 +401,11 @@ func authenticate(
 	if !respd.Success {
 		logger.Errorln("Authentication FAILED")
 		sc.rest.TokenAccessor.SetTokens("", "", -1)
-		if sessionParameters[clientRequestMfaToken] == true {
-			deleteCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
+		if sessionParameters[clientRequestMfaToken] == "true" {
+			deleteCredential(sc, mfaToken)
+		}
+		if sessionParameters[clientStoreTemporaryCredential] == "true" {
+			deleteCredential(sc, idToken)
 		}
 		code, err := strconv.Atoi(respd.Code)
 		if err != nil {
@@ -415,8 +420,11 @@ func authenticate(
 	}
 	logger.Info("Authentication SUCCESS")
 	sc.rest.TokenAccessor.SetTokens(respd.Data.Token, respd.Data.MasterToken, respd.Data.SessionID)
-	if sessionParameters[clientRequestMfaToken] == true {
-		setCredential(sc.cfg.Host, sc.cfg.User, mfaToken, respd.Data.MfaToken)
+	if sc.isClientRequestMfaToken() {
+		setCredential(sc, mfaToken, respd.Data.MfaToken)
+	}
+	if sc.isClientStoreTemporaryCredential() {
+		setCredential(sc, idToken, respd.Data.IdToken)
 	}
 	return &respd.Data, nil
 }
@@ -456,20 +464,43 @@ func authenticateWithConfig(sc *snowflakeConn) error {
 	var samlResponse []byte
 	var proofKey []byte
 	var err error
+	//var consentCacheIdToken = true
+
+	paramBoolValue := "true"
+	if sc.cfg.Authenticator == AuthTypeExternalBrowser {
+		if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+			sc.cfg.Params[clientStoreTemporaryCredential] = &paramBoolValue
+		}
+		if sc.isClientStoreTemporaryCredential() {
+			fillCachedIdToken(sc)
+		}
+	}
+
+	if sc.cfg.Authenticator == AuthTypeUsernamePasswordMFA {
+		if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+			sc.cfg.Params[clientRequestMfaToken] = &paramBoolValue
+		}
+		if sc.isClientRequestMfaToken() {
+			fillCachedMfaToken(sc)
+		}
+	}
+
 	logger.Infof("Authenticating via %v", sc.cfg.Authenticator.String())
 	switch sc.cfg.Authenticator {
 	case AuthTypeExternalBrowser:
-		samlResponse, proofKey, err = authenticateByExternalBrowser(
-			sc.ctx,
-			sc.rest,
-			sc.cfg.Authenticator.String(),
-			sc.cfg.Application,
-			sc.cfg.Account,
-			sc.cfg.User,
-			sc.cfg.Password)
-		if err != nil {
-			sc.cleanup()
-			return err
+		if sc.cfg.IdToken == "" {
+			samlResponse, proofKey, err = authenticateByExternalBrowser(
+				sc.ctx,
+				sc.rest,
+				sc.cfg.Authenticator.String(),
+				sc.cfg.Application,
+				sc.cfg.Account,
+				sc.cfg.User,
+				sc.cfg.Password)
+			if err != nil {
+				sc.cleanup()
+				return err
+			}
 		}
 	case AuthTypeOkta:
 		samlResponse, err = authenticateBySAML(
@@ -499,8 +530,10 @@ func authenticateWithConfig(sc *snowflakeConn) error {
 	return nil
 }
 
-func prepareTemporaryCredentials(sc *snowflakeConn) string {
-	var token = ""
-	token = getCredential(sc.cfg.Host, sc.cfg.User, mfaToken)
-	return token
+func fillCachedIdToken(sc *snowflakeConn) {
+	getCredential(sc, idToken)
+}
+
+func fillCachedMfaToken(sc *snowflakeConn) {
+	getCredential(sc, mfaToken)
 }

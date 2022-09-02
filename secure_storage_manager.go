@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/danieljoos/wincred"
+	"github.com/99designs/keyring"
 )
 
 const (
@@ -47,79 +47,118 @@ func createCredentialCacheDir() {
 
 	if _, err := os.Stat(credCacheDir); os.IsNotExist(err) {
 		if err = os.MkdirAll(credCacheDir, os.ModePerm); err != nil {
-			logger.Debugf("failed to create cache directory. %v, err: %v. ignored\n", credCacheDir, err)
+			logger.Debugf("Failed to create cache directory. %v, err: %v. ignored\n", credCacheDir, err)
 		}
 	}
 	credCache = filepath.Join(credCacheDir, credCacheFileName)
-	logger.Infof("cache directory: %v", cacheFileName)
+	logger.Infof("Cache directory: %v", credCache)
 }
 
-func setCredential(host, user, credType, token string) {
+func setCredential(sc *snowflakeConn, credType, token string) {
 	if token == "" {
 		logger.Debug("no token provided")
 	} else {
+		target := driverName + ":" + credType
 		if runtime.GOOS == "windows" {
-			target := convertTarget(host, user, credType)
-			cred := wincred.NewGenericCredential(target)
-			cred.CredentialBlob = []byte(token)
-			cred.Persist = wincred.PersistLocalMachine
-			cred.Write()
-			logger.Debug("Wrote to Windows Credential Manager successfully")
+			ring, _ := keyring.Open(keyring.Config{
+				WinCredPrefix: strings.ToUpper(sc.cfg.Host),
+				ServiceName:   strings.ToUpper(sc.cfg.User),
+			})
+			item := keyring.Item{
+				Key:  target,
+				Data: []byte(token),
+			}
+			if err := ring.Set(item); err != nil {
+				logger.Debugf("Failed to write to Windows credential manager. Err: %v", err)
+			}
+		} else if runtime.GOOS == "darwin" {
+			ring, _ := keyring.Open(keyring.Config{})
+			item := keyring.Item{
+				Key:  target,
+				Data: []byte(token),
+			}
+			if err := ring.Set(item); err != nil {
+				logger.Debugf("Failed to write to keychain. Err: %v", err)
+			}
 		} else if runtime.GOOS == "linux" {
 			createCredentialCacheDir()
-			writeTemporaryCredential(host, user, credType, token)
+			writeTemporaryCredential(sc, credType, token)
 		} else {
 			logger.Debug("OS not supported for Local Secure Storage")
 		}
 	}
 }
 
-func getCredential(host, user, credType string) string {
-	target := convertTarget(host, user, credType)
+func getCredential(sc *snowflakeConn, credType string) {
+	target := driverName + ":" + credType
 	cred := ""
 	if runtime.GOOS == "windows" {
-		winCred, err := wincred.GetGenericCredential(target)
+		ring, _ := keyring.Open(keyring.Config{
+			WinCredPrefix: strings.ToUpper(sc.cfg.Host),
+			ServiceName:   strings.ToUpper(sc.cfg.User),
+		})
+		i, err := ring.Get(target)
 		if err != nil {
-			logger.Debugf("Failed to read target or could not find it in Windows Credential Manager. Error: %v", err)
-			return ""
+			logger.Debugf("Failed to find the item in credential manager or item does not exist. Error: %v", err)
 		}
-		logger.Debug("Successfully read token. Returning as string")
-		cred = string(winCred.CredentialBlob)
+		cred = string(i.Data)
+	} else if runtime.GOOS == "darwin" {
+		ring, _ := keyring.Open(keyring.Config{})
+		i, err := ring.Get(target)
+		if err != nil {
+			logger.Debugf("Failed to find the item in keychain or item does not exist. Error: %v", err)
+		}
+		cred = string(i.Data)
+		if cred == "" {
+			logger.Debug("Returned credential is empty")
+			return
+		} else {
+			logger.Debug("Successfully read token. Returning as string")
+		}
 	} else if runtime.GOOS == "linux" {
 		createCredentialCacheDir()
-		cred = readTemporaryCredential(host, user, credType)
+		cred = readTemporaryCredential(sc, credType)
 	} else {
 		logger.Debug("OS not supported for Local Secure Storage")
 	}
-	return cred
+
+	if credType == idToken {
+		sc.cfg.IdToken = cred
+	} else if credType == mfaToken {
+		sc.cfg.MfaToken = cred
+	} else {
+		logger.Debugf("Unrecognized type %v for local cached credential", credType)
+	}
 }
 
-func deleteCredential(host, user, credType string) {
-	target := convertTarget(host, user, credType)
+func deleteCredential(sc *snowflakeConn, credType string) {
+	target := driverName + ":" + credType
 	if runtime.GOOS == "windows" {
-		cred, _ := wincred.GetGenericCredential(target)
-		if cred != nil {
-			if err := cred.Delete(); err == nil {
-				logger.Debug("Deleted target in Windows Credential Manager successfully")
-			}
+		ring, _ := keyring.Open(keyring.Config{
+			WinCredPrefix: strings.ToUpper(sc.cfg.Host),
+			ServiceName:   strings.ToUpper(sc.cfg.User),
+		})
+		err := ring.Remove(target)
+		if err != nil {
+			logger.Debugf("Failed to delete target in Windows Credential Manager. Error: %v", err)
 		}
 	} else if runtime.GOOS == "linux" {
-		deleteTemporaryCredential(host, user, credType)
+		deleteTemporaryCredential(sc, credType)
 	}
 }
 
 // Reads temporary credential file when OS is Linux.
-func readTemporaryCredential(host, user, credType string) string {
-	if credCacheDir == "" {
+func readTemporaryCredential(sc *snowflakeConn, credType string) string {
+	if credCache == "" {
 		logger.Debug("Cache file doesn't exist")
 		return ""
 	}
 	jsonData, err := ioutil.ReadFile(credCache)
 	if err != nil {
-		logger.Debugf("error: %v", err)
+		logger.Debugf("Failed to read credential file: %v", err)
 	}
 	var tempCred map[string]string
-	target := convertTarget(host, user, credType)
+	target := convertTarget(sc.cfg.Host, sc.cfg.User, credType)
 	err = json.Unmarshal([]byte(jsonData), &tempCred)
 	cred := tempCred[target]
 	logger.Debug("Successfully read token. Returning as string")
@@ -127,14 +166,14 @@ func readTemporaryCredential(host, user, credType string) string {
 }
 
 // Writes to temporary credential file when OS is Linux.
-func writeTemporaryCredential(host, user, credType, token string) {
+func writeTemporaryCredential(sc *snowflakeConn, credType, token string) {
 	if token == "" {
 		logger.Debug("No token provided")
 	} else {
-		if credCacheDir == "" {
+		if credCache == "" {
 			logger.Debug("Cache file doesn't exist")
 		} else {
-			target := convertTarget(host, user, credType)
+			target := convertTarget(sc.cfg.Host, sc.cfg.User, credType)
 			buf := make(map[string]string)
 			buf[target] = token
 
@@ -149,7 +188,7 @@ func writeTemporaryCredential(host, user, credType, token string) {
 	}
 }
 
-func deleteTemporaryCredential(host, user, credType string) {
+func deleteTemporaryCredential(sc *snowflakeConn, credType string) {
 	if credCacheDir == "" {
 		logger.Debug("Cache file doesn't exist")
 	} else {
