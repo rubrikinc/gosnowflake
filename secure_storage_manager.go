@@ -58,8 +58,9 @@ func setCredential(sc *snowflakeConn, credType, token string) {
 	if token == "" {
 		logger.Debug("no token provided")
 	} else {
-		target := driverName + ":" + credType
+		var target string
 		if runtime.GOOS == "windows" {
+			target = driverName + ":" + credType
 			ring, _ := keyring.Open(keyring.Config{
 				WinCredPrefix: strings.ToUpper(sc.cfg.Host),
 				ServiceName:   strings.ToUpper(sc.cfg.User),
@@ -72,9 +73,13 @@ func setCredential(sc *snowflakeConn, credType, token string) {
 				logger.Debugf("Failed to write to Windows credential manager. Err: %v", err)
 			}
 		} else if runtime.GOOS == "darwin" {
-			ring, _ := keyring.Open(keyring.Config{})
+			target = convertTarget(sc.cfg.Host, sc.cfg.User, credType)
+			ring, _ := keyring.Open(keyring.Config{
+				ServiceName: target,
+			})
+			account := strings.ToUpper(sc.cfg.User)
 			item := keyring.Item{
-				Key:  target,
+				Key:  account,
 				Data: []byte(token),
 			}
 			if err := ring.Set(item); err != nil {
@@ -90,9 +95,10 @@ func setCredential(sc *snowflakeConn, credType, token string) {
 }
 
 func getCredential(sc *snowflakeConn, credType string) {
-	target := driverName + ":" + credType
+	var target string
 	cred := ""
 	if runtime.GOOS == "windows" {
+		target = driverName + ":" + credType
 		ring, _ := keyring.Open(keyring.Config{
 			WinCredPrefix: strings.ToUpper(sc.cfg.Host),
 			ServiceName:   strings.ToUpper(sc.cfg.User),
@@ -103,8 +109,12 @@ func getCredential(sc *snowflakeConn, credType string) {
 		}
 		cred = string(i.Data)
 	} else if runtime.GOOS == "darwin" {
-		ring, _ := keyring.Open(keyring.Config{})
-		i, err := ring.Get(target)
+		target = convertTarget(sc.cfg.Host, sc.cfg.User, credType)
+		ring, _ := keyring.Open(keyring.Config{
+			ServiceName: target,
+		})
+		account := strings.ToUpper(sc.cfg.User)
+		i, err := ring.Get(account)
 		if err != nil {
 			logger.Debugf("Failed to find the item in keychain or item does not exist. Error: %v", err)
 		}
@@ -141,6 +151,16 @@ func deleteCredential(sc *snowflakeConn, credType string) {
 		err := ring.Remove(target)
 		if err != nil {
 			logger.Debugf("Failed to delete target in Windows Credential Manager. Error: %v", err)
+		}
+	} else if runtime.GOOS == "darwin" {
+		target = convertTarget(sc.cfg.Host, sc.cfg.User, credType)
+		ring, _ := keyring.Open(keyring.Config{
+			ServiceName: target,
+		})
+		account := strings.ToUpper(sc.cfg.User)
+		err := ring.Remove(account)
+		if err != nil {
+			logger.Debugf("Failed to delete target in keychain. Error: %v", err)
 		}
 	} else if runtime.GOOS == "linux" {
 		deleteTemporaryCredential(sc, credType)
