@@ -7,16 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"runtime/pprof"
 	"strconv"
 
-	_ "net/http/pprof"
-
-	"runtime/debug"
-
-	sf "github.com/snowflakedb/gosnowflake"
+	sf "github.com/rubrikinc/gosnowflake"
 )
 
 var (

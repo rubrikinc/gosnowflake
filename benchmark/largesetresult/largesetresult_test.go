@@ -3,22 +3,18 @@
 package largesetresult
 
 import (
+	"context"
+	"database/sql"
 	"flag"
 	"log"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"runtime/debug"
+	"strconv"
 	"testing"
 
-	"database/sql"
-
-	"context"
-	"os/signal"
-
-	"runtime/debug"
-
-	"strconv"
-
-	sf "github.com/snowflakedb/gosnowflake"
+	sf "github.com/rubrikinc/gosnowflake"
 )
 
 func TestLargeResultSet(t *testing.T) {

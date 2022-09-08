@@ -1,9 +1,8 @@
-module github.com/snowflakedb/gosnowflake
+module github.com/rubrikinc/gosnowflake
 
 go 1.17
 
 require (
-	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40
 	github.com/aws/aws-sdk-go-v2 v1.11.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.6.1
@@ -13,12 +12,12 @@ require (
 	github.com/form3tech-oss/jwt-go v3.2.5+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
+	github.com/rubrikinc/azure-storage-blob-go v0.15.1-0.20220526032137-e9b7ba3697e5
 	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 )
 
 require (
-	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.0.0 // indirect
@@ -31,6 +30,7 @@ require (
 	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/mattn/go-ieproxy v0.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.11 // indirect
+	github.com/rubrikinc/azure-pipeline-go v0.2.4-0.20220525235236-10f0d1f2d001 // indirect
 	golang.org/x/net v0.0.0-20211118161319-6a13c67c3ce4 // indirect
 	golang.org/x/sys v0.0.0-20211117180635-dee7805ff2e1 // indirect
 	golang.org/x/text v0.3.7 // indirect

@@ -3,23 +3,19 @@
 package jsonresultset
 
 import (
+	"context"
+	"database/sql"
 	"flag"
 	"log"
 	_ "net/http/pprof"
 	"os"
-	"testing"
-
-	"database/sql"
-
-	"context"
 	"os/signal"
-
 	"runtime/debug"
-
 	"strconv"
 	"strings"
+	"testing"
 
-	sf "github.com/snowflakedb/gosnowflake"
+	sf "github.com/rubrikinc/gosnowflake"
 )
 
 func TestJsonResultSet(t *testing.T) {

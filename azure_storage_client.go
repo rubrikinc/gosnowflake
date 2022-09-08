@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/rubrikinc/azure-storage-blob-go/azblob"
 )
 
 type snowflakeAzureClient struct {
